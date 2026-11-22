@@ -8,7 +8,8 @@ pipeline {
     }
 
     environment {
-        PATH+NODE22 = 'D:\\tools\\node-v22.23.5-win-x64'
+        NODE_EXE = 'D:\\tools\\node-v22.23.5-win-x64\\node.exe'
+        NPM_CMD = 'D:\\tools\\node-v22.23.5-win-x64\\npm.cmd'
         VERSION = "v1.${BUILD_NUMBER}.0"
         DASH = 'http://localhost:3000'
     }
@@ -26,15 +27,15 @@ pipeline {
 
         stage('Build') {
             steps {
-                bat 'node --version'
-                bat 'npm --version'
-                bat 'npm ci'
+                bat '"%NODE_EXE%" --version'
+                bat 'call "%NPM_CMD%" --version'
+                bat 'call "%NPM_CMD%" ci'
             }
         }
 
         stage('Test') {
             steps {
-                bat 'npm test'
+                bat 'call "%NPM_CMD%" test'
             }
         }
 
@@ -60,7 +61,7 @@ pipeline {
             steps {
                 retry(5) {
                     sleep time: 4, unit: 'SECONDS'
-                    bat 'node -e "fetch(process.env.DASH + \'/healthz\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'
+                    bat '"%NODE_EXE%" -e "fetch(process.env.DASH + \'/healthz\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'
                 }
             }
         }
@@ -106,7 +107,7 @@ fetch(process.env.DASH + '/api/webhook/jenkins', {
 });
 '''
 
-                bat 'node jenkins-webhook.js'
+                bat '"%NODE_EXE%" jenkins-webhook.js'
             }
         }
     }
