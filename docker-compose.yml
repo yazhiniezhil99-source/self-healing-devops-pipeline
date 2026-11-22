@@ -1,0 +1,10 @@
+services:
+  shop-app:
+    build: .
+    image: shop-app:${VERSION:-latest}
+    container_name: shop-app
+    ports: ["3000:3000"]
+    volumes: ["pipeline-data:/app/data"]
+    environment: [ "DB=/app/data/data.db" ]
+    restart: unless-stopped     # Docker-level self-healing
+volumes: { pipeline-data: {} }

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Self-Healing Pipeline Console</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1ee;--card:#fff;--ink:#14231f;--mut:#5d6f69;--line:#d5ddd8;--ok:#14795a;--bad:#c2381f;--warn:#c98a0b;--run:#2a62c9}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1815;--card:#15231f;--ink:#e7efeb;--mut:#8ba39a;--line:#26382f;--ok:#3fcf9b;--bad:#ff7458;--warn:#f0b43a;--run:#6d9bff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'IBM Plex Sans',system-ui,sans-serif}
+h1,h2,.big{font-family:'Bricolage Grotesque',system-ui,sans-serif;margin:0}
+main{max-width:1100px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:center;margin-bottom:20px}
+h1{font-size:28px}.sub{color:var(--mut)}
+.banner{border-radius:10px;padding:18px 20px;display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center;color:#fff;transition:background .4s}
+.banner.up{background:var(--ok)}.banner.down{background:var(--bad)}.banner.heal{background:var(--warn);color:#201500}
+.banner .big{font-size:26px}.banner small{opacity:.9;display:block}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:14px 0}
+.kpi,.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi b{font:700 26px 'Bricolage Grotesque';display:block}.kpi span{color:var(--mut);font-size:13px}
+.card{margin-top:14px}h2{font-size:18px;margin-bottom:10px}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 14px;cursor:pointer}
+button.p{background:var(--ink);color:var(--bg);border-color:var(--ink)}button.d{color:var(--bad);border-color:var(--bad)}
+button:focus-visible{outline:3px solid var(--run);outline-offset:2px}button:disabled{opacity:.5;cursor:wait}
+.flow{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.st{border:1px solid var(--line);border-left:5px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
+.st b{display:block;font-size:14px}.st.success{border-left-color:var(--ok)}.st.failed{border-left-color:var(--bad)}.st.running{border-left-color:var(--run)}
+.st.pending{opacity:.55}.st.running b::after{content:' …'}
+.bars{display:flex;gap:3px;height:46px;align-items:flex-end}.bars i{flex:1;border-radius:2px;background:var(--ok);min-width:3px}.bars i.down{background:var(--bad);height:100%!important}
+.tbl{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--mut);font-weight:500}
+.tag{padding:2px 8px;border-radius:99px;font-size:12px;border:1px solid currentColor}.t-success,.t-recovered,.t-up{color:var(--ok)}.t-failed,.t-escalated,.t-down{color:var(--bad)}.t-running,.t-recovering{color:var(--run)}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head><body><main>
+<header><div><h1>Self-Healing Pipeline Console</h1><div class="sub">Detects failures, recovers the container, verifies health. All in one place.</div></div></header>
+
+<section class="banner up" id="banner" aria-live="polite"></section>
+<section class="kpis" id="kpis"></section>
+
+<section class="card"><h2>Run and break things</h2>
+<div class="actions">
+<button class="p" onclick="run()">Run pipeline</button>
+<button onclick="run('Test')">Run with failing test</button>
+<button onclick="run('bad-release')">Deploy a bad release</button>
+<button class="d" onclick="inject('container-crash')">Crash container</button>
+<button class="d" onclick="inject('memory-leak')">Trigger memory leak</button>
+</div></section>
+
+<section class="card"><h2 id="runTitle">Latest pipeline run</h2><div class="flow" id="flow"></div></section>
+
+<div class="cols">
+<section class="card"><h2>Application health (last 2 minutes)</h2><div class="bars" id="bars" role="img" aria-label="Health history"></div></section>
+<section class="card"><h2>Incidents and recovery</h2><div class="tbl"><table id="inc"></table></div></section>
+</div>
+<section class="card"><h2>Build and test history</h2><div class="tbl"><table id="runs"></table></div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id),post=(u,b)=>fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b||{})});
+const STAGES=['Checkout','Build','Test','Docker Build','Deploy','Health Verify'];
+const tag=s=>`<span class="tag t-${s}">${s}</span>`,t=s=>s?new Date(s).toLocaleTimeString():'-';
+async function run(f){await post('/api/pipeline/run',{fail:f});refresh()}
+async function inject(type){await post('/api/inject',{type});refresh()}
+async function refresh(){
+ const [s,runs,inc]=await Promise.all(['status','runs','incidents'].map(x=>fetch('/api/'+x).then(r=>r.json())));
+ const T=s.target,b=$('banner');
+ b.className='banner '+(s.healing?'heal':T.status==='up'?'up':'down');
+ b.innerHTML=`<div class="big">${s.healing?'Recovering automatically':T.status==='up'?'Application healthy':'Failure detected'}</div>
+ <div><small>Container</small>${T.container} (${T.status})</div><div><small>Running version</small>${T.version}</div><div><small>Last good version</small>${T.lastGood}</div><div><small>Restarts</small>${T.restarts}</div>`;
+ $('kpis').innerHTML=[['Uptime',s.uptime+'%'],['Pipeline success',s.successRate+'%'],['Runs',s.runs],['Incidents',s.incidents],['Mean time to recover',s.mttr?s.mttr+' s':'n/a']].map(k=>`<div class="kpi"><b>${k[1]}</b><span>${k[0]}</span></div>`).join('');
+ const r=runs[0];$('runTitle').textContent=r?`Latest run: ${r.version} (${r.source})`:'Latest pipeline run';
+ $('flow').innerHTML=STAGES.map(n=>{const x=r&&r.stages.find(z=>z.name===n);return `<div class="st ${x?x.status:'pending'}"><b>${n}</b>${x?(x.ms?x.ms+' ms':'running'):'waiting'}<br><small>${x?x.detail:''}</small></div>`}).join('');
+ $('bars').innerHTML=s.health.map(h=>`<i class="${h.status}" style="height:${h.status==='up'?30+h.latency/2:100}%" title="${t(h.ts)} ${h.status}"></i>`).join('');
+ $('inc').innerHTML='<tr><th>Fault</th><th>Detected</th><th>Action</th><th>Tries</th><th>MTTR</th><th>Status</th></tr>'+(inc.map(i=>`<tr><td>${i.type}</td><td>${t(i.detected)}</td><td>${i.action}</td><td>${i.attempts}</td><td>${i.mttr_s?i.mttr_s.toFixed(1)+' s':'-'}</td><td>${tag(i.status)}</td></tr>`).join('')||'<tr><td colspan=6>No incidents yet. Use "Crash container" to see recovery.</td></tr>');
+ $('runs').innerHTML='<tr><th>#</th><th>Version</th><th>Commit</th><th>Source</th><th>Started</th><th>Result</th><th>Failed stage</th></tr>'+(runs.map(r=>{const f=r.stages.find(x=>x.status==='failed');return `<tr><td>${r.id}</td><td>${r.version}</td><td>${r.commit_sha}</td><td>${r.source}</td><td>${t(r.started)}</td><td>${tag(r.status)}</td><td>${f?f.name+': '+f.detail:'-'}</td></tr>`}).join('')||'<tr><td colspan=7>No runs yet. Select "Run pipeline".</td></tr>');
+}
+refresh();setInterval(refresh,2000);
+</script></body></html>
