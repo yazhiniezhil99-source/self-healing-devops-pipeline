@@ -58,8 +58,10 @@ pipeline {
                 bat '''
                 set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;D:\\tools\\node-v22.23.5-win-x64;%PATH%"
 
+                echo Checking Docker...
                 docker --version
 
+                echo Preserving previous image...
                 docker image inspect shop-app:latest >nul 2>&1
 
                 if not errorlevel 1 (
@@ -67,6 +69,7 @@ pipeline {
                     if errorlevel 1 exit /b 1
                 )
 
+                echo Building new Docker image...
                 docker build -t shop-app:%VERSION% -t shop-app:latest .
 
                 if errorlevel 1 exit /b 1
@@ -77,13 +80,13 @@ pipeline {
         stage('Deploy') {
             steps {
                 bat '''
-                echo Deploying application through Docker Compose...
+                echo Deploying to the existing Compose project...
 
-                "C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker-compose.exe" up -d --no-build
+                "C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker-compose.exe" -p self-healing-pipeline up -d --no-build
 
                 if errorlevel 1 exit /b 1
 
-                echo Docker deployment completed.
+                echo Application deployment completed.
                 '''
             }
         }
@@ -108,8 +111,11 @@ pipeline {
     }
 
     post {
+
         failure {
             bat '''
+            set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;%PATH%"
+
             echo Checking for previous working image...
 
             docker image inspect shop-app:previous >nul 2>&1
@@ -121,8 +127,9 @@ pipeline {
 
                 set "VERSION=previous"
 
-                "C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker-compose.exe" up -d --no-build
+                docker-compose.exe -p self-healing-pipeline up -d --no-build
             )
+            exit /b 0
             '''
         }
 
