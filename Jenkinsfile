@@ -29,15 +29,10 @@ pipeline {
                 bat '''
                 set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
 
-                echo Checking Node.js version...
-                where node
+                echo Checking Node.js...
                 node --version
 
-                echo Checking npm version...
-                where npm
-                call npm.cmd --version
-
-                echo Installing project dependencies...
+                echo Installing dependencies...
                 call npm.cmd ci
 
                 if errorlevel 1 exit /b 1
@@ -50,8 +45,7 @@ pipeline {
                 bat '''
                 set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
 
-                echo Running application tests...
-                node --version
+                echo Running automated tests...
                 call npm.cmd test
 
                 if errorlevel 1 exit /b 1
@@ -64,10 +58,8 @@ pipeline {
                 bat '''
                 set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;D:\\tools\\node-v22.23.5-win-x64;%PATH%"
 
-                echo Checking Docker...
                 docker --version
 
-                echo Preserving previous image...
                 docker image inspect shop-app:latest >nul 2>&1
 
                 if not errorlevel 1 (
@@ -75,7 +67,6 @@ pipeline {
                     if errorlevel 1 exit /b 1
                 )
 
-                echo Building Docker image...
                 docker build -t shop-app:%VERSION% -t shop-app:latest .
 
                 if errorlevel 1 exit /b 1
@@ -86,10 +77,9 @@ pipeline {
         stage('Deploy') {
             steps {
                 bat '''
-                set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;%PATH%"
+                echo Deploying application through Docker Compose...
 
-                echo Deploying application...
-                docker compose up -d --no-build
+                "C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker-compose.exe" up -d --no-build
 
                 if errorlevel 1 exit /b 1
 
@@ -118,11 +108,8 @@ pipeline {
     }
 
     post {
-
         failure {
             bat '''
-            set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;%PATH%"
-
             echo Checking for previous working image...
 
             docker image inspect shop-app:previous >nul 2>&1
@@ -131,11 +118,10 @@ pipeline {
                 echo No previous image available. Rollback skipped.
             ) else (
                 echo Restoring previous application image...
-                set "VERSION=previous"
-                docker compose up -d --no-build
 
-                if errorlevel 1 exit /b 1
-                echo Previous image restored.
+                set "VERSION=previous"
+
+                "C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin\\docker-compose.exe" up -d --no-build
             )
             '''
         }
@@ -161,9 +147,7 @@ fetch(process.env.DASH + '/api/webhook/jenkins', {
 })
 .then(async response => {
     console.log('Dashboard webhook HTTP:', response.status);
-    if (!response.ok) {
-        console.log(await response.text());
-    }
+    if (!response.ok) console.log(await response.text());
 })
 .catch(error => {
     console.log('Dashboard webhook error:', error.message);
