@@ -8,8 +8,6 @@ pipeline {
     }
 
     environment {
-        NODE_EXE = 'D:\\tools\\node-v22.23.5-win-x64\\node.exe'
-        NPM_CMD = 'D:\\tools\\node-v22.23.5-win-x64\\npm.cmd'
         VERSION = "v1.${BUILD_NUMBER}.0"
         DASH = 'http://localhost:3000'
     }
@@ -27,25 +25,39 @@ pipeline {
 
         stage('Build') {
             steps {
-                bat '"%NODE_EXE%" --version'
-                bat 'call "%NPM_CMD%" --version'
-                bat 'call "%NPM_CMD%" ci'
+                bat '''
+                set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
+                where node
+                node --version
+                where npm
+                npm --version
+                npm ci
+                '''
             }
         }
 
         stage('Test') {
             steps {
-                bat 'call "%NPM_CMD%" test'
+                bat '''
+                set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
+                node --version
+                npm test
+                '''
             }
         }
 
         stage('Docker Build') {
             steps {
                 bat '''
+                set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;D:\\tools\\node-v22.23.5-win-x64;%PATH%"
+
+                docker --version
+
                 docker image inspect shop-app:latest >nul 2>&1
                 if not errorlevel 1 (
                     docker tag shop-app:latest shop-app:previous
                 )
+
                 docker build -t shop-app:%VERSION% -t shop-app:latest .
                 '''
             }
@@ -53,7 +65,10 @@ pipeline {
 
         stage('Deploy') {
             steps {
-                bat 'docker compose up -d --no-build'
+                bat '''
+                set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;%PATH%"
+                docker compose up -d --no-build
+                '''
             }
         }
 
@@ -61,7 +76,11 @@ pipeline {
             steps {
                 retry(5) {
                     sleep time: 4, unit: 'SECONDS'
-                    bat '"%NODE_EXE%" -e "fetch(process.env.DASH + \'/healthz\').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"'
+
+                    bat '''
+                    set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
+                    node -e "fetch('http://localhost:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+                    '''
                 }
             }
         }
@@ -70,7 +89,10 @@ pipeline {
     post {
         failure {
             bat '''
+            set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;%PATH%"
+
             docker image inspect shop-app:previous >nul 2>&1
+
             if errorlevel 1 (
                 echo No previous image available; rollback skipped.
             ) else (
@@ -107,7 +129,7 @@ fetch(process.env.DASH + '/api/webhook/jenkins', {
 });
 '''
 
-                bat '"%NODE_EXE%" jenkins-webhook.js'
+                bat '"D:\\tools\\node-v22.23.5-win-x64\\node.exe" jenkins-webhook.js'
             }
         }
     }
