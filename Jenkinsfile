@@ -17,6 +17,7 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps {
                 checkout scm
@@ -27,11 +28,19 @@ pipeline {
             steps {
                 bat '''
                 set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
+
+                echo Checking Node.js version...
                 where node
                 node --version
+
+                echo Checking npm version...
                 where npm
-                npm --version
-                npm ci
+                call npm.cmd --version
+
+                echo Installing project dependencies...
+                call npm.cmd ci
+
+                if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -40,8 +49,12 @@ pipeline {
             steps {
                 bat '''
                 set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
+
+                echo Running application tests...
                 node --version
-                npm test
+                call npm.cmd test
+
+                if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -51,14 +64,21 @@ pipeline {
                 bat '''
                 set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;D:\\tools\\node-v22.23.5-win-x64;%PATH%"
 
+                echo Checking Docker...
                 docker --version
 
+                echo Preserving previous image...
                 docker image inspect shop-app:latest >nul 2>&1
+
                 if not errorlevel 1 (
                     docker tag shop-app:latest shop-app:previous
+                    if errorlevel 1 exit /b 1
                 )
 
+                echo Building Docker image...
                 docker build -t shop-app:%VERSION% -t shop-app:latest .
+
+                if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -67,7 +87,13 @@ pipeline {
             steps {
                 bat '''
                 set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;%PATH%"
+
+                echo Deploying application...
                 docker compose up -d --no-build
+
+                if errorlevel 1 exit /b 1
+
+                echo Docker deployment completed.
                 '''
             }
         }
@@ -79,7 +105,12 @@ pipeline {
 
                     bat '''
                     set "PATH=D:\\tools\\node-v22.23.5-win-x64;%PATH%"
-                    node -e "fetch('http://localhost:3000/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+                    echo Checking application health...
+
+                    node -e "fetch('http://localhost:3000/healthz').then(r => {console.log('HTTP Status:', r.status); process.exit(r.ok ? 0 : 1)}).catch(e => {console.error(e.message); process.exit(1)})"
+
+                    if errorlevel 1 exit /b 1
                     '''
                 }
             }
@@ -87,18 +118,24 @@ pipeline {
     }
 
     post {
+
         failure {
             bat '''
             set "PATH=C:\\Users\\manib\\AppData\\Local\\Programs\\DockerDesktop\\resources\\bin;%PATH%"
 
+            echo Checking for previous working image...
+
             docker image inspect shop-app:previous >nul 2>&1
 
             if errorlevel 1 (
-                echo No previous image available; rollback skipped.
+                echo No previous image available. Rollback skipped.
             ) else (
                 echo Restoring previous application image...
                 set "VERSION=previous"
                 docker compose up -d --no-build
+
+                if errorlevel 1 exit /b 1
+                echo Previous image restored.
             )
             '''
         }
@@ -117,12 +154,16 @@ const payload = {
 
 fetch(process.env.DASH + '/api/webhook/jenkins', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+        'Content-Type': 'application/json'
+    },
     body: JSON.stringify(payload)
 })
 .then(async response => {
     console.log('Dashboard webhook HTTP:', response.status);
-    if (!response.ok) console.log(await response.text());
+    if (!response.ok) {
+        console.log(await response.text());
+    }
 })
 .catch(error => {
     console.log('Dashboard webhook error:', error.message);
